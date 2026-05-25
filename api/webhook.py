@@ -2,6 +2,7 @@ from http.server import BaseHTTPRequestHandler
 import urllib.request
 import os
 import json
+import re
 
 class handler(BaseHTTPRequestHandler):
 
@@ -9,19 +10,23 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Bot Running OK")
+
     def do_POST(self):
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            raw    = self.rfile.read(length).decode("utf-8")
+            length  = int(self.headers.get("Content-Length", 0))
+            raw     = self.rfile.read(length).decode("utf-8", errors="replace")
 
-            # Fix real newlines inside JSON string from TradingView
-            raw = raw.replace('\r\n', '\\n').replace('\n', '\\n')
+            # Step 1: fix real newlines inside JSON values
+            # Only replace newlines that are inside quoted strings
+            fixed = re.sub(r'(?<!\\)\n', '\\n', raw)
+            fixed = re.sub(r'(?<!\\)\r', '', fixed)
 
-            body    = json.loads(raw)
+            # Step 2: parse
+            body    = json.loads(fixed)
             chat_id = str(body.get("chat_id", ""))
             text    = str(body.get("text", ""))
 
-            # Restore newlines for Telegram formatting
+            # Step 3: restore newlines for Telegram
             text = text.replace('\\n', '\n')
 
             token   = os.environ.get("BOT_TOKEN", "")
@@ -38,17 +43,22 @@ class handler(BaseHTTPRequestHandler):
                 method="POST"
             )
 
-            with urllib.request.urlopen(req) as res:
+            with urllib.request.urlopen(req, timeout=10) as res:
                 res.read()
 
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
 
+        except json.JSONDecodeError as e:
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(f"JSON Error: {str(e)}".encode())
+
         except Exception as e:
             self.send_response(500)
             self.end_headers()
-            self.wfile.write(str(e).encode())
+            self.wfile.write(f"Error: {str(e)}".encode())
 
     def log_message(self, format, *args):
         pass
