@@ -1,7 +1,6 @@
 from http.server import BaseHTTPRequestHandler
 import urllib.request
 import os
-import json
 import re
 
 class handler(BaseHTTPRequestHandler):
@@ -13,38 +12,35 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            raw    = self.rfile.read(length).decode("utf-8", errors="replace")
+            length  = int(self.headers.get("Content-Length", 0))
+            raw     = self.rfile.read(length).decode("utf-8", errors="replace")
 
-            print(f"RAW BODY: {repr(raw)}")
+            print(f"RAW: {repr(raw)}")
 
-            # Step 1: fix real newlines
-            fixed = re.sub(r'(?<!\\)\n', '\\n', raw)
-            fixed = re.sub(r'(?<!\\)\r', '', fixed)
+            # Extract chat_id
+            chat_id_match = re.search(r'"chat_id"\s*:\s*"([^"]+)"', raw)
+            # Extract text — everything between "text":" and last "}
+            text_match    = re.search(r'"text"\s*:\s*"(.*?)"\s*\}', raw, re.DOTALL)
 
-            # Step 2: remove control characters except \n \t
-            fixed = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', fixed)
+            if not chat_id_match or not text_match:
+                raise ValueError("Could not parse chat_id or text")
 
-            print(f"FIXED BODY: {repr(fixed)}")
+            chat_id = chat_id_match.group(1)
+            text    = text_match.group(1)
 
-            body    = json.loads(fixed)
-            chat_id = str(body.get("chat_id", "973902721"))
-            text    = str(body.get("text", ""))
-
-            # Restore newlines for Telegram
+            # Fix escaped newlines
             text = text.replace('\\n', '\n')
 
-            token = os.environ.get("BOT_TOKEN", "")
-            url   = f"https://api.telegram.org/bot{token}/sendMessage"
+            print(f"CHAT_ID: {chat_id}")
+            print(f"TEXT: {text}")
 
-            payload = json.dumps({
-                "chat_id": chat_id,
-                "text":    text
-            }).encode("utf-8")
+            token   = os.environ.get("BOT_TOKEN", "")
+            url     = f"https://api.telegram.org/bot{token}/sendMessage"
+            payload = f'{{"chat_id":"{chat_id}","text":{__import__("json").dumps(text)}}}'
 
             req = urllib.request.Request(
                 url,
-                data=payload,
+                data=payload.encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
@@ -56,15 +52,8 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"OK")
 
-        except json.JSONDecodeError as e:
-            print(f"JSON ERROR: {str(e)}")
-            print(f"RAW WAS: {repr(raw)}")
-            self.send_response(400)
-            self.end_headers()
-            self.wfile.write(f"JSON Error: {str(e)}".encode())
-
         except Exception as e:
-            print(f"GENERAL ERROR: {str(e)}")
+            print(f"ERROR: {str(e)}")
             self.send_response(500)
             self.end_headers()
             self.wfile.write(f"Error: {str(e)}".encode())
