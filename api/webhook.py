@@ -9,18 +9,22 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Bot Running OK")
-
     def do_POST(self):
         try:
             length = int(self.headers.get("Content-Length", 0))
-            raw    = self.rfile.read(length)
-            body   = json.loads(raw)
+            raw    = self.rfile.read(length).decode("utf-8")
 
+            # Fix real newlines inside JSON string from TradingView
+            raw = raw.replace('\r\n', '\\n').replace('\n', '\\n')
+
+            body    = json.loads(raw)
             chat_id = str(body.get("chat_id", ""))
             text    = str(body.get("text", ""))
-            token   = os.environ.get("BOT_TOKEN", "")
 
-            # Use urllib instead of requests (no dependency issues)
+            # Restore newlines for Telegram formatting
+            text = text.replace('\\n', '\n')
+
+            token   = os.environ.get("BOT_TOKEN", "")
             url     = f"https://api.telegram.org/bot{token}/sendMessage"
             payload = json.dumps({
                 "chat_id": chat_id,
