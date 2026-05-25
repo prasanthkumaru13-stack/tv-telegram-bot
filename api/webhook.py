@@ -13,24 +13,30 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
-            length  = int(self.headers.get("Content-Length", 0))
-            raw     = self.rfile.read(length).decode("utf-8", errors="replace")
+            length = int(self.headers.get("Content-Length", 0))
+            raw    = self.rfile.read(length).decode("utf-8", errors="replace")
 
-            # Step 1: fix real newlines inside JSON values
-            # Only replace newlines that are inside quoted strings
+            # Log raw input to see exactly what TradingView sends
+            print(f"RAW BODY: {repr(raw)}")
+
+            # Fix real newlines inside JSON
             fixed = re.sub(r'(?<!\\)\n', '\\n', raw)
             fixed = re.sub(r'(?<!\\)\r', '', fixed)
 
-            # Step 2: parse
+            print(f"FIXED BODY: {repr(fixed)}")
+
             body    = json.loads(fixed)
-            chat_id = str(body.get("chat_id", ""))
+            chat_id = str(body.get("chat_id", "973902721"))
             text    = str(body.get("text", ""))
 
-            # Step 3: restore newlines for Telegram
+            # Restore newlines for Telegram
             text = text.replace('\\n', '\n')
 
-            token   = os.environ.get("BOT_TOKEN", "")
-            url     = f"https://api.telegram.org/bot{token}/sendMessage"
+            print(f"CHAT_ID: {chat_id}, TEXT: {text}")
+
+            token = os.environ.get("BOT_TOKEN", "")
+            url   = f"https://api.telegram.org/bot{token}/sendMessage"
+
             payload = json.dumps({
                 "chat_id": chat_id,
                 "text":    text
@@ -51,11 +57,14 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(b"OK")
 
         except json.JSONDecodeError as e:
+            print(f"JSON ERROR: {str(e)}")
+            print(f"RAW WAS: {repr(raw)}")
             self.send_response(400)
             self.end_headers()
             self.wfile.write(f"JSON Error: {str(e)}".encode())
 
         except Exception as e:
+            print(f"GENERAL ERROR: {str(e)}")
             self.send_response(500)
             self.end_headers()
             self.wfile.write(f"Error: {str(e)}".encode())
