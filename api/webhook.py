@@ -16,12 +16,14 @@ class handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             raw    = self.rfile.read(length).decode("utf-8", errors="replace")
 
-            # Log raw input to see exactly what TradingView sends
             print(f"RAW BODY: {repr(raw)}")
 
-            # Fix real newlines inside JSON
+            # Step 1: fix real newlines
             fixed = re.sub(r'(?<!\\)\n', '\\n', raw)
             fixed = re.sub(r'(?<!\\)\r', '', fixed)
+
+            # Step 2: remove control characters except \n \t
+            fixed = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', fixed)
 
             print(f"FIXED BODY: {repr(fixed)}")
 
@@ -31,8 +33,6 @@ class handler(BaseHTTPRequestHandler):
 
             # Restore newlines for Telegram
             text = text.replace('\\n', '\n')
-
-            print(f"CHAT_ID: {chat_id}, TEXT: {text}")
 
             token = os.environ.get("BOT_TOKEN", "")
             url   = f"https://api.telegram.org/bot{token}/sendMessage"
