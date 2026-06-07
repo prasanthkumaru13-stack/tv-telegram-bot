@@ -1,16 +1,50 @@
 from http.server import BaseHTTPRequestHandler
 import urllib.request
+import urllib.parse
 import os
 import json
 import re
 import time
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+BOT_TOKEN    = os.environ.get("BOT_TOKEN", "")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
-# ─── IN-MEMORY TRADE STORE ────────────────────────────────────────────────────
-# Stores active trades: key = "TICKER_DIRECTION_INDICATOR"
-# Example: "BTCUSDT_SHORT_1S"
+# ─── IN-MEMORY ACTIVE TRADES ──────────────────────────────────────────────────
 active_trades = {}
+
+# ─── SUPABASE ─────────────────────────────────────────────────────────────────
+def supabase(method, table, data=None, params=None):
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+
+    body = json.dumps(data).encode("utf-8") if data else None
+
+    req = urllib.request.Request(
+        url, data=body, method=method,
+        headers={
+            "Content-Type":  "application/json",
+            "apikey":        SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Prefer":        "return=representation"
+        }
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+
+def db_insert(data):
+    return supabase("POST", "trades", data)
+
+def db_update(trade_id, data):
+    return supabase("PATCH", "trades", data, {"trade_id": f"eq.{trade_id}"})
+
+def db_find(trade_id):
+    result = supabase("GET", "trades", params={
+        "trade_id": f"eq.{trade_id}",
+        "limit": "1"
+    })
+    return result[0] if result else None
 
 # ─── TELEGRAM ─────────────────────────────────────────────────────────────────
 def send_telegram(chat_id, text):
@@ -31,13 +65,9 @@ def parse_raw(raw):
     fixed = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', fixed)
     return json.loads(fixed)
 
-# ─── TRADE KEY ────────────────────────────────────────────────────────────────
+# ─── TRADE KEY (for memory lookup) ────────────────────────────────────────────
 def trade_key(data):
-    # Unique key to identify an active trade in memory
-    ticker    = data.get("ticker", "")
-    direction = data.get("direction", "")
-    indicator = data.get("indicator", "")
-    return f"{ticker}_{direction}_{indicator}"
+    return f"{data.get('ticker')}_{data.get('direction')}_{data.get('indicator')}"
 
 # ─── TRADE ID GENERATOR ───────────────────────────────────────────────────────
 def generate_trade_id(data):
@@ -48,7 +78,7 @@ def generate_trade_id(data):
     return f"{ticker}_{direction}_{indicator}_{ts}"
 
 # ─── TELEGRAM FORMATTER ───────────────────────────────────────────────────────
-def format_message(data, trade_id=None):
+def format_message(data):
     t         = data.get("type", "")
     indicator = data.get("indicator", "")
     ticker    = data.get("ticker", "")
@@ -56,48 +86,39 @@ def format_message(data, trade_id=None):
     tf        = data.get("tf", "")
 
     if t == "ENTRY":
-        mode       = data.get("mode", "")
-        quality    = data.get("quality", "")
-        confidence = data.get("confidence", "")
-        alignment  = data.get("alignment", "")
-        entry      = data.get("entry", "")
-        tp1        = data.get("tp1", "")
-        tp2        = data.get("tp2", "")
-        tp3        = data.get("tp3", "")
-        sl         = data.get("sl", "")
         entry_label = "LONG ENTRY 🚀" if direction == "LONG" else "SHORT ENTRY 🔴"
         return (
             f"Indicator Code: {indicator}\n"
             f"🔱 Trade: #{ticker} 🔱\n\n"
-            f"{entry_label}: {entry}\n\n"
-            f"📊 Mode: {mode}\n"
-            f"✅ Quality: {quality}\n"
-            f"💯 Conf: {confidence}% | 📶 {alignment}/5\n"
+            f"{entry_label}: {data.get('entry')}\n\n"
+            f"📊 Mode: {data.get('mode')}\n"
+            f"✅ Quality: {data.get('quality')}\n"
+            f"💯 Conf: {data.get('confidence')}% | 📶 {data.get('alignment')}/5\n"
             f"⏱ TF: {tf}m\n\n"
             f"🀄️ LEVERAGE: 5x\n\n"
-            f"🎯 TP1: {tp1}\n"
-            f"🎯 TP2: {tp2}\n"
-            f"🎯 TP3: {tp3}\n\n"
-            f"⛔️ SL: {sl}"
+            f"🎯 TP1: {data.get('tp1')}\n"
+            f"🎯 TP2: {data.get('tp2')}\n"
+            f"🎯 TP3: {data.get('tp3')}\n\n"
+            f"⛔️ SL: {data.get('sl')}"
         )
 
     elif t == "TP1":
         return (
             f"Indicator Code: {indicator}\n"
             f"✅ #{ticker} | TP1 HIT\n"
-            f"🎯 TP1: {data.get('price', '')}\n"
-            f"📈 Profit: {data.get('profit_pct', '')}%\n"
-            f"⏳ Period: {data.get('duration', '')}"
+            f"🎯 TP1: {data.get('price')}\n"
+            f"📈 Profit: {data.get('profit_pct')}%\n"
+            f"⏳ Period: {data.get('duration')}"
         )
 
     elif t == "TP2":
         return (
             f"Indicator Code: {indicator}\n"
             f"✅ #{ticker} | TP2 HIT\n"
-            f"🎯 TP2: {data.get('price', '')}\n"
-            f"📈 Profit: {data.get('profit_pct', '')}%\n"
+            f"🎯 TP2: {data.get('price')}\n"
+            f"📈 Profit: {data.get('profit_pct')}%\n"
             f"🔒 Lock profits\n"
-            f"⏳ Period: {data.get('duration', '')}"
+            f"⏳ Period: {data.get('duration')}"
         )
 
     elif t == "TP3":
@@ -105,9 +126,9 @@ def format_message(data, trade_id=None):
             f"Indicator Code: {indicator}\n"
             f"✅ #{ticker} | TP3 HIT\n"
             f"🏁 Target Completed\n"
-            f"🎯 TP3: {data.get('price', '')}\n"
-            f"📈 Profit: {data.get('profit_pct', '')}%\n"
-            f"⏳ Period: {data.get('duration', '')}"
+            f"🎯 TP3: {data.get('price')}\n"
+            f"📈 Profit: {data.get('profit_pct')}%\n"
+            f"⏳ Period: {data.get('duration')}"
         )
 
     elif t == "SL":
@@ -121,27 +142,27 @@ def format_message(data, trade_id=None):
         return (
             f"Indicator Code: {indicator}\n"
             f"❌ #{ticker} | SL HIT\n"
-            f"🛑 SL: {data.get('price', '')}\n"
-            f"📉 Loss: {data.get('loss_pct', '')}%\n"
+            f"🛑 SL: {data.get('price')}\n"
+            f"📉 Loss: {data.get('loss_pct')}%\n"
             f"{context}\n"
-            f"⏳ Period: {data.get('duration', '')}"
+            f"⏳ Period: {data.get('duration')}"
         )
 
     elif t == "EXIT":
         tp1_hit = data.get("tp1_hit", False)
         tp2_hit = data.get("tp2_hit", False)
         tp3_hit = data.get("tp3_hit", False)
-        tp_hits = [tp for tp, hit in [("TP1", tp1_hit), ("TP2", tp2_hit), ("TP3", tp3_hit)] if hit]
-        tp_summary  = " → ".join(tp_hits) if tp_hits else "No TPs hit"
-        dir_label   = "LONG" if direction == "LONG" else "SHORT"
+        tp_hits    = [tp for tp, hit in [("TP1", tp1_hit), ("TP2", tp2_hit), ("TP3", tp3_hit)] if hit]
+        tp_summary = " → ".join(tp_hits) if tp_hits else "No TPs hit"
+        dir_label  = "LONG" if direction == "LONG" else "SHORT"
         return (
             f"Indicator Code: {indicator}\n"
             f"🚪 EXIT {dir_label} | {ticker}\n"
-            f"📌 Reason: {data.get('reason', '')}\n"
-            f"💰 Exit: {data.get('exit_price', '')}\n"
+            f"📌 Reason: {data.get('reason')}\n"
+            f"💰 Exit: {data.get('exit_price')}\n"
             f"✅ Hits: {tp_summary}\n"
             f"⏱ TF: {tf}m\n"
-            f"⏳ Duration: {data.get('duration', '')}"
+            f"⏳ Duration: {data.get('duration')}"
         )
 
     return f"Unknown type: {t}"
@@ -151,62 +172,114 @@ def process_trade(data):
     t   = data.get("type", "")
     key = trade_key(data)
 
+    # ── ENTRY ──────────────────────────────────────────────────────────────
     if t == "ENTRY":
-        # Generate trade_id and store in memory
         trade_id = generate_trade_id(data)
-        active_trades[key] = {
-            "trade_id":  trade_id,
-            "ticker":    data.get("ticker"),
-            "direction": data.get("direction"),
-            "indicator": data.get("indicator"),
-            "tf":        data.get("tf"),
-            "mode":      data.get("mode"),
-            "quality":   data.get("quality"),
-            "confidence":data.get("confidence"),
-            "alignment": data.get("alignment"),
-            "entry":     data.get("entry"),
-            "tp1":       data.get("tp1"),
-            "tp2":       data.get("tp2"),
-            "tp3":       data.get("tp3"),
-            "sl":        data.get("sl"),
-            "tp1_hit":   False,
-            "tp2_hit":   False,
-            "tp3_hit":   False,
-        }
-        print(f"TRADE OPENED: {trade_id}")
+
+        # Store in memory
+        active_trades[key] = trade_id
+
+        # Insert into Supabase
+        db_insert({
+            "trade_id":   trade_id,
+            "indicator":  data.get("indicator"),
+            "ticker":     data.get("ticker"),
+            "direction":  data.get("direction"),
+            "timeframe":  data.get("tf"),
+            "mode":       data.get("mode"),
+            "quality":    data.get("quality"),
+            "confidence": data.get("confidence"),
+            "alignment":  data.get("alignment"),
+            "entry_price":data.get("entry"),
+            "tp1_price":  data.get("tp1"),
+            "tp2_price":  data.get("tp2"),
+            "tp3_price":  data.get("tp3"),
+            "sl_price":   data.get("sl"),
+            "status":     "OPEN"
+        })
+
+        print(f"DB INSERT: {trade_id}")
         return trade_id
 
-    else:
-        # Find existing trade from memory
-        trade = active_trades.get(key)
-        if not trade:
-            print(f"WARNING: No active trade found for key {key}")
+    # ── TP1 ────────────────────────────────────────────────────────────────
+    elif t == "TP1":
+        trade_id = active_trades.get(key)
+        if not trade_id:
+            print(f"WARNING: No active trade for {key}")
             return None
 
-        trade_id = trade["trade_id"]
-
-        if t == "TP1":
-            trade["tp1_hit"] = True
-            print(f"TP1 HIT: {trade_id}")
-
-        elif t == "TP2":
-            trade["tp2_hit"] = True
-            print(f"TP2 HIT: {trade_id}")
-
-        elif t == "TP3":
-            trade["tp3_hit"] = True
-            print(f"TP3 HIT: {trade_id}")
-
-        elif t == "SL":
-            print(f"SL HIT: {trade_id}")
-            # Keep in memory until EXIT arrives
-
-        elif t == "EXIT":
-            print(f"TRADE CLOSED: {trade_id}")
-            # Remove from memory
-            active_trades.pop(key, None)
-
+        db_update(trade_id, {"tp1_hit": True})
+        print(f"DB UPDATE TP1: {trade_id}")
         return trade_id
+
+    # ── TP2 ────────────────────────────────────────────────────────────────
+    elif t == "TP2":
+        trade_id = active_trades.get(key)
+        if not trade_id:
+            print(f"WARNING: No active trade for {key}")
+            return None
+
+        db_update(trade_id, {"tp2_hit": True})
+        print(f"DB UPDATE TP2: {trade_id}")
+        return trade_id
+
+    # ── TP3 ────────────────────────────────────────────────────────────────
+    elif t == "TP3":
+        trade_id = active_trades.get(key)
+        if not trade_id:
+            print(f"WARNING: No active trade for {key}")
+            return None
+
+        db_update(trade_id, {"tp3_hit": True})
+        print(f"DB UPDATE TP3: {trade_id}")
+        return trade_id
+
+    # ── SL ─────────────────────────────────────────────────────────────────
+    elif t == "SL":
+        trade_id = active_trades.get(key)
+        if not trade_id:
+            print(f"WARNING: No active trade for {key}")
+            return None
+
+        db_update(trade_id, {
+            "sl_hit":     True,
+            "sl_price":   data.get("price"),
+            "status":     "CLOSED",
+            "exit_price": data.get("price"),
+            "exit_reason":"SL HIT",
+            "duration":   data.get("duration"),
+            "tp1_hit":    data.get("tp1_hit", False),
+            "tp2_hit":    data.get("tp2_hit", False),
+        })
+
+        # Remove from memory
+        active_trades.pop(key, None)
+        print(f"DB UPDATE SL CLOSED: {trade_id}")
+        return trade_id
+
+    # ── EXIT ───────────────────────────────────────────────────────────────
+    elif t == "EXIT":
+        trade_id = active_trades.get(key)
+        if not trade_id:
+            print(f"WARNING: No active trade for {key}")
+            return None
+
+        db_update(trade_id, {
+            "status":     "CLOSED",
+            "exit_reason":data.get("reason"),
+            "exit_price": data.get("exit_price"),
+            "duration":   data.get("duration"),
+            "tp1_hit":    data.get("tp1_hit", False),
+            "tp2_hit":    data.get("tp2_hit", False),
+            "tp3_hit":    data.get("tp3_hit", False),
+        })
+
+        # Remove from memory
+        active_trades.pop(key, None)
+        print(f"DB UPDATE EXIT CLOSED: {trade_id}")
+        return trade_id
+
+    return None
 
 # ─── HANDLER ──────────────────────────────────────────────────────────────────
 class handler(BaseHTTPRequestHandler):
@@ -229,12 +302,12 @@ class handler(BaseHTTPRequestHandler):
 
             print(f"TYPE: {t} | TICKER: {data.get('ticker')} | DIR: {data.get('direction')}")
 
-            # Process trade — get or generate trade_id
+            # 1. Process trade — DB operations
             trade_id = process_trade(data)
             print(f"TRADE_ID: {trade_id}")
 
-            # Format and send Telegram message
-            text = format_message(data, trade_id)
+            # 2. Format and send Telegram
+            text = format_message(data)
             print(f"MESSAGE:\n{text}")
             send_telegram(chat_id, text)
 
