@@ -285,19 +285,17 @@ def process_trade(data):
 class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
-    # Debug — show what env vars are loaded
-    supabase_url = os.environ.get("SUPABASE_URL", "NOT SET")
-    supabase_key = os.environ.get("SUPABASE_KEY", "NOT SET")
-    
-    debug = {
-        "supabase_url": supabase_url[:30] + "..." if len(supabase_url) > 30 else supabase_url,
-        "supabase_key": supabase_key[:20] + "..." if len(supabase_key) > 20 else supabase_key,
-        "bot_token": "SET" if os.environ.get("BOT_TOKEN") else "NOT SET"
-    }
-    
-    self.send_response(200)
-    self.end_headers()
-    self.wfile.write(json.dumps(debug).encode())
+        supabase_url = os.environ.get("SUPABASE_URL", "NOT SET")
+        supabase_key = os.environ.get("SUPABASE_KEY", "NOT SET")
+        debug = {
+            "status":      "running",
+            "supabase_url": supabase_url[:30] + "..." if len(supabase_url) > 10 else supabase_url,
+            "supabase_key": supabase_key[:15] + "..." if len(supabase_key) > 10 else supabase_key,
+            "bot_token":   "SET" if os.environ.get("BOT_TOKEN") else "NOT SET"
+        }
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps(debug).encode())
 
     def do_POST(self):
         try:
