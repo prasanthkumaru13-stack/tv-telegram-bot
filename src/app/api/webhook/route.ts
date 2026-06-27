@@ -193,6 +193,7 @@ async function processTrade(data: SignalPayload) {
       tp3_price: data.tp3,
       sl_price: data.sl,
       status: 'OPEN',
+      trade_taken: true,
     });
     if (error) throw new Error(error.message);
     return tradeId;

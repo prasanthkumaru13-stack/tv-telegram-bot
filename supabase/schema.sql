@@ -42,7 +42,10 @@ create extension if not exists "pgcrypto";
 -- )
 
 alter table trades
-  add column if not exists trade_taken boolean not null default false;
+  add column if not exists trade_taken boolean not null default true;
+
+alter table trades
+  alter column trade_taken set default true;
 
 alter table settings
   add column if not exists updated_at timestamptz default now();
