@@ -8,10 +8,13 @@ import time
 
 BOT_TOKEN    = os.environ.get("BOT_TOKEN", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 # ─── SUPABASE ─────────────────────────────────────────────────────────────────
 def supabase(method, table, data=None, params=None):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
