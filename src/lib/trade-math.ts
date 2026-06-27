@@ -46,11 +46,17 @@ export function normalizeQuality(quality: string | null | undefined): QualityBuc
   return 'UNKNOWN';
 }
 
+export function isManualClose(trade: Trade): boolean {
+  return (trade.exit_reason ?? '').trim().toUpperCase() === 'MANUAL CLOSE';
+}
+
 export function isWin(trade: Trade): boolean {
+  if (isManualClose(trade)) return false;
   return Boolean(trade.tp1_hit || trade.tp2_hit || trade.tp3_hit);
 }
 
 export function isLoss(trade: Trade): boolean {
+  if (isManualClose(trade)) return false;
   return Boolean(trade.sl_hit && !isWin(trade));
 }
 
@@ -60,6 +66,7 @@ function isTp2StopBreakeven(trade: Trade): boolean {
 
 export function resultLabel(trade: Trade): { label: string; cls: string } {
   if (normalizeStatus(trade.status) === 'OPEN') return { label: 'Open', cls: 'pill-open' };
+  if (isManualClose(trade)) return { label: 'Manual close', cls: 'pill-open' };
   if (trade.sl_hit) {
     if (trade.tp3_hit) return { label: 'TP3 + SL', cls: 'pill-loss' };
     if (trade.tp2_hit) return { label: 'TP2 + SL', cls: 'pill-loss' };
@@ -86,6 +93,7 @@ export function riskAmount(settings: Settings | null): number {
 }
 
 export function tradeRMultiple(trade: Trade): number | null {
+  if (isManualClose(trade)) return 0;
   if (isTp2StopBreakeven(trade)) return 0;
   if (!trade.entry_price || !trade.sl_price || !trade.exit_price) return null;
   const move = pctMove(trade);

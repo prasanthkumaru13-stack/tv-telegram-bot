@@ -392,6 +392,7 @@ export function SignalConsole({ initialTrades, initialSettings }: { initialTrade
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [savingTakenId, setSavingTakenId] = useState<string | null>(null);
+  const [savingCloseId, setSavingCloseId] = useState<string | null>(null);
 
   const allIndicators = useMemo(() => {
     const fromDb = [...new Set(trades.map((trade) => trade.indicator).filter(Boolean) as string[])];
@@ -437,7 +438,7 @@ export function SignalConsole({ initialTrades, initialSettings }: { initialTrade
   const takenClosed = closedTrades.filter((trade) => trade.trade_taken);
   const pnlClosedTrades = pnlTradesForFilter(closedTrades, takenFilter);
   const wins = closedTrades.filter(isWin);
-  const losses = closedTrades.filter((trade) => trade.sl_hit && !isWin(trade));
+  const losses = closedTrades.filter(isLoss);
   const winRate = closedTrades.length ? wins.length / closedTrades.length * 100 : 0;
   const netModeledPnl = pnlClosedTrades.reduce((sum, trade) => sum + modeledPnl(trade, settings), 0);
   const detailTrade = trades.find((trade) => trade.id === detailId) ?? null;
@@ -475,6 +476,35 @@ export function SignalConsole({ initialTrades, initialSettings }: { initialTrade
       setTrades((rows) => rows.map((row) => row.id === trade.id ? { ...row, trade_taken: Boolean(payload.trade?.trade_taken) } : row));
     }
     setSavingTakenId(null);
+  }
+
+  async function manualCloseTrade(trade: Trade) {
+    if (!isOpen(trade)) return;
+    if (!window.confirm(`Close ${shortTicker(trade)} manually at breakeven?`)) return;
+
+    const closedAt = new Date().toISOString();
+    setSavingCloseId(trade.id);
+    setTrades((rows) => rows.map((row) => row.id === trade.id ? {
+      ...row,
+      status: 'CLOSED',
+      exit_reason: 'MANUAL CLOSE',
+      exit_price: row.entry_price,
+      exit_time: closedAt,
+      duration: 'Manual close',
+    } : row));
+
+    const response = await fetch(`/api/trades/${trade.id}/manual-close`, {
+      method: 'PATCH',
+    });
+    const payload = await response.json().catch(() => null) as { trade?: Trade; error?: string } | null;
+
+    if (!response.ok || !payload?.trade) {
+      setTrades((rows) => rows.map((row) => row.id === trade.id ? trade : row));
+      alert(payload?.error ?? 'Manual close did not return a trade.');
+    } else {
+      setTrades((rows) => rows.map((row) => row.id === trade.id ? payload.trade as Trade : row));
+    }
+    setSavingCloseId(null);
   }
 
   async function saveSettings(event: React.FormEvent) {
@@ -570,7 +600,9 @@ export function SignalConsole({ initialTrades, initialSettings }: { initialTrade
             trades={openTrades}
             onDetail={openDetail}
             onToggleTaken={toggleTaken}
+            onManualClose={manualCloseTrade}
             savingTakenId={savingTakenId}
+            savingCloseId={savingCloseId}
           />
         )}
         {screen === 'history' && (
@@ -593,7 +625,9 @@ export function SignalConsole({ initialTrades, initialSettings }: { initialTrade
             settings={settings}
             onBack={() => navigate('history')}
             onToggleTaken={toggleTaken}
+            onManualClose={manualCloseTrade}
             savingTakenId={savingTakenId}
+            savingCloseId={savingCloseId}
             takenFilter={takenFilter}
           />
         )}
@@ -921,7 +955,21 @@ function CapitalGrowthPanel({ trades, settings, takenFilter }: { trades: Trade[]
   );
 }
 
-function LiveScreen({ trades, onDetail, onToggleTaken, savingTakenId }: { trades: Trade[]; onDetail: (id: string) => void; onToggleTaken: (trade: Trade, next: boolean) => void; savingTakenId: string | null }) {
+function LiveScreen({
+  trades,
+  onDetail,
+  onToggleTaken,
+  onManualClose,
+  savingTakenId,
+  savingCloseId,
+}: {
+  trades: Trade[];
+  onDetail: (id: string) => void;
+  onToggleTaken: (trade: Trade, next: boolean) => void;
+  onManualClose: (trade: Trade) => void;
+  savingTakenId: string | null;
+  savingCloseId: string | null;
+}) {
   return (
     <section className="screen active">
       <header className="topbar">
@@ -965,7 +1013,20 @@ function LiveScreen({ trades, onDetail, onToggleTaken, savingTakenId }: { trades
                 <span>Confidence <b>{trade.confidence ?? '—'}</b></span>
                 <span>Align {trade.alignment ?? '—'}/5</span>
               </div>
-              <TakenToggle checked={trade.trade_taken} disabled={savingTakenId === trade.id} onChange={(next) => onToggleTaken(trade, next)} />
+              <div className="live-card-actions">
+                <TakenToggle checked={trade.trade_taken} disabled={savingTakenId === trade.id} onChange={(next) => onToggleTaken(trade, next)} />
+                <button
+                  type="button"
+                  className="manual-close-button"
+                  disabled={savingCloseId === trade.id}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onManualClose(trade);
+                  }}
+                >
+                  {savingCloseId === trade.id ? 'Closing...' : 'Manual close'}
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1133,14 +1194,18 @@ function DetailsScreen({
   settings,
   onBack,
   onToggleTaken,
+  onManualClose,
   savingTakenId,
+  savingCloseId,
   takenFilter,
 }: {
   trade: Trade | null;
   settings: Settings | null;
   onBack: () => void;
   onToggleTaken: (trade: Trade, next: boolean) => void;
+  onManualClose: (trade: Trade) => void;
   savingTakenId: string | null;
+  savingCloseId: string | null;
   takenFilter: TakenFilter;
 }) {
   if (!trade) {
@@ -1173,7 +1238,19 @@ function DetailsScreen({
           <h1>{shortTicker(trade)} · {trade.direction}</h1>
           <p className="topbar-sub">{trade.indicator} signal on {trade.timeframe} · entered {relTime(trade.entry_time)}</p>
         </div>
-        <TakenToggle checked={trade.trade_taken} disabled={savingTakenId === trade.id} onChange={(next) => onToggleTaken(trade, next)} />
+        <div className="detail-actions">
+          <TakenToggle checked={trade.trade_taken} disabled={savingTakenId === trade.id} onChange={(next) => onToggleTaken(trade, next)} />
+          {isOpen(trade) && (
+            <button
+              type="button"
+              className="manual-close-button"
+              disabled={savingCloseId === trade.id}
+              onClick={() => onManualClose(trade)}
+            >
+              {savingCloseId === trade.id ? 'Closing...' : 'Manual close'}
+            </button>
+          )}
+        </div>
       </header>
       <div className="detail-grid">
         <div className="detail-card">

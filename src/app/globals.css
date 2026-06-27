@@ -1243,7 +1243,31 @@ button:focus-visible, input:focus-visible, .nav-item:focus-visible{
   background:var(--long-dim);
   border-color:rgba(0,229,160,0.4);
 }
-.live-card .taken-toggle{ margin-top:14px; }
+.live-card-actions,
+.detail-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.live-card-actions{ margin-top:14px; }
+.manual-close-button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:118px;
+  height:30px;
+  background:rgba(255,193,7,0.1);
+  border:1px solid rgba(255,193,7,0.32);
+  border-radius:999px;
+  color:var(--amber);
+  font-size:11px;
+  font-weight:800;
+}
+.manual-close-button:hover{
+  background:rgba(255,193,7,0.16);
+  border-color:rgba(255,193,7,0.5);
+}
 
 .ladder-v2{ position:relative; padding:10px 0 18px; min-width:150px; }
 .ladder-v2-track{
