@@ -35,9 +35,9 @@ export default function LoginPage() {
     <main className="login-shell">
       <form className="login-card" onSubmit={handleSubmit}>
         <div className="login-brand">
-          <div className="brand-mark">A</div>
+          <div className="brand-mark">T</div>
           <div>
-            <h1>Atirekin</h1>
+            <h1>Trend Sync Sniper</h1>
             <p>Signal Console</p>
           </div>
         </div>
@@ -71,4 +71,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

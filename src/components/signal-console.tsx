@@ -541,9 +541,9 @@ export function SignalConsole({ initialTrades, initialSettings }: { initialTrade
     <div className="app">
       <aside className="rail">
         <div className="rail-brand">
-          <div className="brand-mark">A</div>
+          <div className="brand-mark">T</div>
           <div className="brand-text">
-            <span className="brand-name">Atirekin</span>
+            <span className="brand-name">Trend Sync Sniper</span>
             <span className="brand-sub">Signal Console</span>
           </div>
         </div>

@@ -1,4 +1,4 @@
--- Atirekin Signal Console
+-- Trend Sync Sniper Signal Console
 -- Single global TradingView signal stream with login-only dashboard access.
 
 create extension if not exists "pgcrypto";

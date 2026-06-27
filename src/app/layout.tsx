@@ -21,7 +21,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Atirekin Signal Console',
+  title: 'Trend Sync Sniper Signal Console',
   description: 'Private realtime TradingView signal dashboard.',
 };
 
